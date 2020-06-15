@@ -1,28 +1,25 @@
 from keras.models import Sequential
 from keras.layers import Dense, LSTM, Dropout
-from keras import optimizers
 import pandas as pd
 import os
 
 
 
-EPOCHS = 150
-BATCH_SIZE = 20
+EPOCHS = 1000
+BATCH_SIZE = 32
 TIME_STEPS = 60
 PREDICT_PERIOD = 5
+
+#2 layers 100 and 50
 
 
 def create_model(data):
     regressor = Sequential()
-    regressor.add(LSTM(units = 150, return_sequences = True, input_shape = (data.shape[1], 1)))
-    regressor.add(Dropout(0.5))
-    regressor.add(LSTM(units = 150, return_sequences = True))
-    regressor.add(Dropout(0.5))
-    regressor.add(LSTM(units = 150, return_sequences = False))
-    regressor.add(Dropout(0.5))
-    regressor.add(Dense(1, activation='linear'))
-    optimizer = optimizers.Adam()
-    regressor.compile(optimizer ='rmsprop' , loss = 'mean_squared_error')
+    regressor.add(LSTM(units = 64, return_sequences = True, input_shape = (data.shape[1], 1),kernel_initializer='random_uniform'))
+    regressor.add(LSTM(units = 64, return_sequences = False))
+    regressor.add(Dropout(0.3))
+    regressor.add(Dense(1))
+    regressor.compile(optimizer ='adam' , loss = 'mean_squared_error')
     return regressor
 
 def obtain_data_from_csv(path):

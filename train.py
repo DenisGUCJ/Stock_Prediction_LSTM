@@ -5,6 +5,8 @@ import os
 import time
 import fileinput
 import pickle
+from pandas import concat
+from keras.models import load_model
 from keras.callbacks import ModelCheckpoint, CSVLogger, EarlyStopping
 from predefines import create_model
 from predefines import BATCH_SIZE, PREDICT_PERIOD, TIME_STEPS, EPOCHS
@@ -30,6 +32,7 @@ def stock_prediction_LSTM(filename, upadteFlag):
     close_scaler = MinMaxScaler(feature_range=(0,1))
     training_set_scaled = scaler.fit_transform(train_set)
     temp_set_scaled = close_scaler.fit_transform(temp_set)
+    
     X_train = []
     y_train = []
 
@@ -79,7 +82,7 @@ def stock_prediction_LSTM(filename, upadteFlag):
     #last_sequenceest = np.reshape(last_sequence, (last_sequence.shape[0], last_sequence.shape[1], 1))
 
 
-    mcp = ModelCheckpoint(os.path.join(os.path.dirname(__file__), '.', 'models/lstm_model'), monitor='val_loss', verbose=1,
+    mcp = ModelCheckpoint(os.path.join(os.path.dirname(__file__), '.', 'models/best_lstm_model_'+filename), monitor='val_loss', verbose=1,
                           save_best_only=True, save_weights_only=False, mode='min', period=1)
 
     es = EarlyStopping(monitor='val_loss', mode='min', verbose=1,
@@ -93,10 +96,10 @@ def stock_prediction_LSTM(filename, upadteFlag):
 
         print('Creating new model...')
         model = create_model(X_train)
-        history = model.fit(X_train, y_train, epochs = EPOCHS, batch_size = BATCH_SIZE, verbose=1, validation_data=(X_test,Y_test), callbacks=[ mcp,csv_logger,es ])
+        history = model.fit(X_train, y_train, epochs = EPOCHS, batch_size = BATCH_SIZE, verbose=1, validation_data=(X_test,Y_test), callbacks=[ mcp,csv_logger,es ], shuffle = False)
         print('Saving model...')
         print(history.history)
-        pickle.dump(model, open("models/lstm_model","wb"))
+        pickle.dump(model, open("models/lstm_model_"+filename,"wb"))
         plt.figure(figsize=(20,10))
         plt.plot(history.history['loss'], color = 'blue', label = 'Train')
         plt.plot(history.history['val_loss'], color = 'green', label = 'Test')
@@ -107,53 +110,50 @@ def stock_prediction_LSTM(filename, upadteFlag):
         plt.show()
     else:
         try:
-            model = pickle.load(open("models/lstm_model", 'rb'))
+            #model = pickle.load(open("models/best_lstm_model_"+filename, 'rb'))
+            model = load_model(os.path.join(os.path.dirname(__file__),'models/',"best_lstm_model_"+filename))
             print("Loaded saved model...")
         except FileNotFoundError:
             print('Model not found')
 
-    #prediction
+        #prediction
 
 
-    predicted_stock_price = model.predict(X_test)
-    test_stock_prices = close_scaler.inverse_transform(predicted_stock_price)
-
-    #prediction
-    prediction = []
-
-    for i in range(0,PREDICT_PERIOD):
-        last_element = predicted_stock_price[-1]
-        #last_sequence = np.delete(np.append(last_sequence,last_element),0)
-        #last_sequence = np.reshape(last_sequence, (1, last_sequence.shape[0], 1))
-        #predicted_elem = model.predict(last_sequence)
-        #prediction.append(predicted_elem)
-        #predicted_stock_price = np.append(predicted_stock_price, predicted_elem)
-        last_sequence = np.delete(np.append(last_sequence,last_element),0)
-        last_sequence = np.reshape(last_sequence, (1, last_sequence.shape[0], 1))
-        #predicted_elem = model.predict(last_sequence)
-        #prediction.append(predicted_elem)
-        #predicted_stock_price = np.append(predicted_stock_price, predicted_elem)
-        #X_test = np.append(X_test,last_sequence)
-        X_test = np.vstack([X_test,last_sequence])
-        #X_test = np.array(X_test)
-        #X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], 1))
         predicted_stock_price = model.predict(X_test)
+        test_stock_prices = close_scaler.inverse_transform(predicted_stock_price)
 
-    
-    
-    prediction = close_scaler.inverse_transform(predicted_stock_price)
+        #prediction
+        prediction = []
 
-    
+        for i in range(0,PREDICT_PERIOD):
+            last_element = predicted_stock_price[-1]
+            last_element = last_element.reshape(1,1)
+            last_element = close_scaler.inverse_transform(last_element)
+            last_element = scaler.transform(last_element)
+            last_sequence = np.delete(np.append(last_sequence,last_element),0)
+            last_sequence = np.reshape(last_sequence, (1, last_sequence.shape[0], 1))
+            X_test = np.vstack([X_test,last_sequence])
+            predicted_stock_price = model.predict(X_test)
 
-    x_pred = list(range(prediction.shape[0] - PREDICT_PERIOD - 1,prediction.shape[0]))
+        
+        
+        prediction = close_scaler.inverse_transform(predicted_stock_price)
 
-    print('Ploting the prediction...')
-    plt.figure(figsize=(20,10))
-    plt.plot(real_stock_price, color = 'green', label = 'Stock Price')
-    plt.plot(prediction, color = 'blue',marker='o', label = 'Predicted Stock Price')
-    plt.plot(test_stock_prices, color = 'red', label = 'Test Stock Price')
-    plt.title('Stock Price Prediction')
-    plt.xlabel('Trading Day')
-    plt.ylabel('Stock Price')
-    plt.legend()
-    plt.show()
+        #errors
+        
+        for i in range(0,PREDICT_PERIOD):
+            error = ((real_stock_price[-PREDICT_PERIOD + i]-prediction[-PREDICT_PERIOD + i])/real_stock_price[-PREDICT_PERIOD + i]) * 100
+            print("error_"+str(i+1)+" : "+str(error))
+
+        prediction = prediction[prediction.size - PREDICT_PERIOD:]
+
+        print('Ploting the prediction...')
+        plt.figure(figsize=(20,10))
+        plt.plot(real_stock_price, color = 'green', label = 'Stock Price')
+        plt.plot(range(real_stock_price.size - PREDICT_PERIOD,real_stock_price.size),prediction,color = 'blue',marker='o', label = 'Predicted Stock Price')
+        plt.plot(test_stock_prices, color = 'red', label = 'Test Stock Price')
+        plt.title('Stock Price Prediction')
+        plt.xlabel('Trading Day')
+        plt.ylabel('Stock Price')
+        plt.legend()
+        plt.show()
